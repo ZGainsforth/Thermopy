@@ -19,7 +19,6 @@ except ImportError:
     from elementtree import parse
 from numpy import empty,array,dot,log
 from pkg_resources import Requirement, resource_filename
-from units import Enthalpy
 import doctest
 import copy
 import os
@@ -41,8 +40,6 @@ class Element(object):
     reactions.
 
     >>> db = Elementdb()
-    Loading database. This may take a while...
-    Done
     >>> weird = db.getelementdata("C8H6O2")
     >>> print weird.elements
     [('C', 8), ('H', 6), ('O', 2)]
@@ -94,7 +91,7 @@ class Element(object):
         Computes the sensible enthalpy in J/mol
         """
         Ta = array([1,T/2,T**2/3,T**3/4,T**4/5,1/T],'d')
-        if T > 200 and T < 1000:
+        if T > 200 and T <= 1000:
             return dot(self.Tmin_[:6],Ta)*R*T
         elif T >1000 and T < 6000:
             return dot(self._Tmax[:6],Ta)*R*T
@@ -105,14 +102,14 @@ class Element(object):
         """
         Computes the total enthalpy in J/kg
         """
-        return Enthalpy(self.cp_(T)*T)
+        return self.cp_(T)*T
         
     def so(self,T):
         """
         Computes enthropy in J/mol K
         """
         Ta = array([log(T),T,T**2/2,T**3/3,T**4/4,0,1],'d')
-        if T > 200 and T < 1000:
+        if T > 200 and T <= 1000:
             return dot(self.Tmin_,Ta)*R
         elif T >1000 and T < 6000:
             return dot(self._Tmax,Ta)*R
@@ -149,13 +146,11 @@ class Mixture(object):
     tuple containing the element and the amount.
 
     >>> db = Elementdb()
-    Loading database. This may take a while...
-    Done
     >>> mix = db.getmixturedata([("O2 REF ELEMENT",20.9476),\
-("N2  REF ELEMENT",78.084),\
-("CO2",0.0319),\
-("AR REF ELEMENT",0.9365),\
-])
+    ("N2  REF ELEMENT",78.084),\
+    ("CO2",0.0319),\
+    ("AR REF ELEMENT",0.9365),\
+    ])
     >>> for e in mix: print e
     (<element> O2 REF ELEMENT, 20.947600000000001)
     (<element> N2  REF ELEMENT, 78.084000000000003)
@@ -300,7 +295,7 @@ class Mixture(object):
         return self.extensive('ho',T)
 
     def h(self,T):
-        return Enthalpy(self.cp_(T)*T)
+        return self.cp_(T)*T
 
     def so(self,T):
         return self.extensive('so',T)
@@ -337,8 +332,6 @@ class Elementdb(object):
     for combustion.
 
     >>> db = Elementdb()
-    Loading database. This may take a while...
-    Done
     >>> oxygen = db.getelementdata("O2 REF ELEMENT")
     >>> print oxygen
     <element> O2 REF ELEMENT
@@ -374,10 +367,10 @@ class Elementdb(object):
     Element class for any mixture.
 
     >>> mix = db.getmixturedata([("O2 REF ELEMENT",20.9476),\
-("N2  REF ELEMENT",78.084),\
-("CO2",0.0319),\
-("AR REF ELEMENT",0.9365),\
-])
+    ("N2  REF ELEMENT",78.084),\
+    ("CO2",0.0319),\
+    ("AR REF ELEMENT",0.9365),\
+    ])
     >>> print mix
     <Mixture>:
         O2 REF ELEMENT at 20.9476
@@ -407,10 +400,8 @@ class Elementdb(object):
                 Requirement.parse("thermopy"),'thermopy/BURCAT_THR.xml')
             database = open(dbname,'r')
             
-        print 'Loading database. This may take a while...'
         tree = parse(database)
         self.db = tree.getroot()
-        print 'Done'
 
     def search(self,formula):
         """
@@ -436,31 +427,34 @@ class Elementdb(object):
         comp = []
         for specie in self.db:
             try:
-                if formula == specie.find("phase").find("formula").\
-                        text:
-                    phase = specie.find("phase")
-                    coefficients = phase.find("coefficients")
-                    low = coefficients.find("range_Tmin_to_1000") 
-                    for (i,c) in zip(range(7),low):
-                        Tmin_[i] = float(c.text)
+                for element in specie:
+                    try:
+                        if element.tag == "phase":
+                            if formula == element.find("formula").text:
+                                phase = element
+                                coefficients = phase.find("coefficients")
+                                low = coefficients.find("range_Tmin_to_1000")
+                                for (i,c) in zip(range(7),low):
+                                    Tmin_[i] = float(c.text)
 
-                    high = coefficients.find("range_1000_to_Tmax")
-                    for (i,c) in zip(range(7),high):
-                        _Tmax[i] = float(c.text)
+                                high = coefficients.find("range_1000_to_Tmax")
+                                for (i,c) in zip(range(7),high):
+                                    _Tmax[i] = float(c.text)
 
-                    elements = phase.find("elements")
-                    elements = elements.getchildren()
-                    for elem in elements:
-                        it = elem.items()
-                        # First is name of element, second is number
-                        # of atoms
-                        comp.append((it[0][1],int(it[1][1])))
+                                elements = phase.find("elements")
+                                elements = elements.getchildren()
+                                for elem in elements:
+                                    it = elem.items()
+                                    # First is name of element, second is number
+                                    # of atoms
+                                    comp.append((it[0][1],int(it[1][1])))
 
-                    mm = float(phase.find("molecular_weight").text)/1000
-                    hfr = float(coefficients.find("hf298_div_r").text)
-                    
-                    return Element(formula,Tmin_,_Tmax,mm,hfr,comp)
-                    
+                                mm = float(phase.find("molecular_weight").text)/1000
+                                hfr = float(coefficients.find("hf298_div_r").text)
+
+                                return Element(formula,Tmin_,_Tmax,mm,hfr,comp)
+                    except:
+                        pass
             except:
                 pass
 
@@ -476,11 +470,15 @@ class Elementdb(object):
         return mixture
 
 
-def test_doctest():
-    import doctest
-    doctest.testmod()
 
 
 if __name__ == '__main__':
-    test_doctest()
+    # Move all doctests to py.test
+    db = Elementdb()
+    mix = db.getmixturedata([("O2 REF ELEMENT",20.9476),
+                             ("N2  REF ELEMENT",78.084),
+                             ("CO2",0.0319),
+                             ("AR REF ELEMENT",0.9365),
+                             ("O2 REF ELEMENT",1.2)])
+    mix.aggregate()
 
